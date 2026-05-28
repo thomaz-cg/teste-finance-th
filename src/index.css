@@ -1,0 +1,32 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue-dark: #0C447C;
+  --blue-mid: #185FA5;
+  --blue-light: #E6F1FB;
+  --green-dark: #3B6D11;
+  --green-light: #EAF3DE;
+  --red-dark: #A32D2D;
+  --red-light: #FCEBEB;
+  --amber-dark: #854F0B;
+  --amber-light: #FAEEDA;
+  --purple-dark: #533489;
+  --purple-light: #EEEDFE;
+  --gray-dark: #2C2C2A;
+  --gray-mid: #888780;
+  --gray-light: #F1EFE8;
+  --gray-bg: #F7F6F3;
+  --white: #FFFFFF;
+  --font: 'Plus Jakarta Sans', sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
+}
+
+html, body, #root { height: 100%; font-family: var(--font); background: var(--gray-bg); color: var(--gray-dark); -webkit-font-smoothing: antialiased; }
+input, select, textarea, button { font-family: var(--font); }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
