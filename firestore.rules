@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Admin pode ler tudo
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'admin@email.com';
+    }
+
+    // Usuário autenticado
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Perfis de usuário — admin lê todos, usuário lê/edita só o próprio
+    match /users/{uid} {
+      allow read: if isAdmin() || request.auth.uid == uid;
+      allow create: if isAuth() && request.auth.uid == uid;
+      allow update: if isAdmin() || request.auth.uid == uid;
+
+      // Subcoleções: expenses, fixed, config — só o próprio dono
+      match /{subcollection}/{docId} {
+        allow read, write: if isAuth() && request.auth.uid == uid;
+      }
+    }
+
+    // Config global (ex: budget do admin)
+    match /config/{docId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
