@@ -2,8 +2,8 @@ import React, { useState, useRef } from 'react';
 import { CATEGORIES, TIPOS, fmt, today, getResponsaveis } from '../../helpers';
 import { Upload, X, Loader, CheckCircle, AlertCircle, Plus, Trash2, ImagePlus } from 'lucide-react';
 
-const GEMINI_KEY = 'AQ.Ab8RN6JngoeYX2Zq4A00I7PfGCs7H_p7Hm80B_IbRGmrlhep0A';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const OPENROUTER_KEY = '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';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export default function ImportExtrato({ profile, onSave }) {
   const [images, setImages]       = useState([]); // [{file, preview, base64}]
@@ -75,27 +75,35 @@ Regras de classificação:
 
 Se não encontrar lançamentos, retorne [].`;
 
-      const parts = [{ text: prompt }];
+      // Build messages with images for OpenRouter
+      const userContent = [{ type: 'text', text: prompt }];
       for (const img of images) {
-        parts.push({ inline_data: { mime_type: img.mimeType, data: img.base64 } });
+        userContent.push({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.base64}` } });
       }
 
-      const response = await fetch(GEMINI_URL, {
+      const response = await fetch(OPENROUTER_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GEMINI_KEY },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + OPENROUTER_KEY,
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Financas do Casal',
+        },
         body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+          model: 'google/gemini-2.0-flash-exp:free',
+          messages: [{ role: 'user', content: userContent }],
+          temperature: 0.1,
+          max_tokens: 4096,
         })
       });
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err?.error?.message || 'Erro na API Gemini');
+        throw new Error(err?.error?.message || 'Erro na API');
       }
 
       const data = await response.json();
-      let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      let text = data.choices?.[0]?.message?.content || '';
       text = text.replace(/```json|```/g, '').trim();
 
       const parsed = JSON.parse(text);
