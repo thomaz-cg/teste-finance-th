@@ -1,20 +1,25 @@
-import React from 'react';
-import { fmt, currentYM, monthLabel, getLast6Months, expensesByMonth, totalByCategory, CAT_MAP, fixedAsExpenses } from '../../helpers';
+import React, { useState } from 'react';
+import { fmt, currentYM, monthLabel, getLast6Months, getMonths, expensesByMonth, totalByCategory, CAT_MAP, fixedAsExpenses } from '../../helpers';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Receipt, Tag, Wallet, RefreshCw, ArrowRight, Home } from 'lucide-react';
+import { Receipt, Tag, Wallet, RefreshCw, ArrowRight, Home, Calendar } from 'lucide-react';
 
 export default function Overview({ expenses, fixedList, budget, profile, onNavigate }) {
-  const ym          = currentYM();
-  const activeFixed = fixedAsExpenses(fixedList);
-  const thisMonth   = [...expensesByMonth(expenses,ym), ...activeFixed];
-  const total       = thisMonth.reduce((s,e)=>s+e.val,0);
-  const totalFixed  = activeFixed.reduce((s,f)=>s+f.val,0);
+  const ymNow = currentYM();
+  // meses disponíveis = mês atual + meses com lançamentos
+  const availableMonths = Array.from(new Set([ymNow, ...getMonths(expenses)])).sort().reverse();
+  const [selMonth, setSelMonth] = useState(ymNow);
+  const isCurrentMonth = selMonth === ymNow;
 
-  // casa vs pessoal
-  const totalCasa       = thisMonth.filter(e=>(e.tipo||'casa')==='casa').reduce((s,e)=>s+e.val,0);
+  const activeFixed = fixedAsExpenses(fixedList);
+  // fixos só entram no mês atual (são recorrentes do mês corrente)
+  const monthFixed  = isCurrentMonth ? activeFixed : [];
+  const thisMonth   = [...expensesByMonth(expenses, selMonth), ...monthFixed];
+  const total       = thisMonth.reduce((s,e)=>s+e.val,0);
+  const totalFixed  = monthFixed.reduce((s,f)=>s+f.val,0);
+
+  const totalCasa          = thisMonth.filter(e=>(e.tipo||'casa')==='casa').reduce((s,e)=>s+e.val,0);
   const totalPessoalOwner  = thisMonth.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.ownerName).reduce((s,e)=>s+e.val,0);
   const totalPessoalSpouse = thisMonth.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.spouseName).reduce((s,e)=>s+e.val,0);
-  const totalPessoal    = totalPessoalOwner + totalPessoalSpouse;
 
   const catTotals  = totalByCategory(thisMonth);
   const topCat     = Object.entries(catTotals).sort((a,b)=>b[1]-a[1])[0];
@@ -23,7 +28,7 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
 
   const last6 = getLast6Months();
   const chartData = last6.map(m => {
-    const all = [...expensesByMonth(expenses,m), ...(m===ym?activeFixed:[])];
+    const all = [...expensesByMonth(expenses,m), ...(m===ymNow?activeFixed:[])];
     return {
       name: monthLabel(m),
       Casa:    all.filter(e=>(e.tipo||'casa')==='casa').reduce((s,e)=>s+e.val,0),
@@ -43,34 +48,53 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
     );
   };
 
-  const recent = expensesByMonth(expenses,ym).slice(0,5);
+  const recent = expensesByMonth(expenses, selMonth).slice(0,5);
   const ownerName  = profile?.ownerName  || 'Eu';
   const spouseName = profile?.spouseName || 'Cônjuge';
 
   return (
     <div>
-      <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:22, fontWeight:700 }}>Olá, {ownerName}! 👋</h1>
-        <p style={{ fontSize:14, color:'var(--gray-mid)', marginTop:4 }}>Resumo de {monthLabel(ym)}</p>
+      <div style={{ marginBottom:24, display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
+        <div>
+          <h1 style={{ fontSize:22, fontWeight:700 }}>Olá, {ownerName}! 👋</h1>
+          <p style={{ fontSize:14, color:'var(--gray-mid)', marginTop:4 }}>Resumo de {monthLabel(selMonth)}{isCurrentMonth ? '' : ' (mês anterior)'}</p>
+        </div>
+        {/* Month selector */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, background:'white', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:'var(--radius-sm)', padding:'0 12px', height:40 }}>
+          <Calendar size={15} color="var(--gray-mid)"/>
+          <select value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+            style={{ border:'none', outline:'none', fontSize:14, fontWeight:600, color:'var(--gray-dark)', background:'transparent', fontFamily:'inherit', cursor:'pointer', height:'100%' }}>
+            {availableMonths.map(m=>(
+              <option key={m} value={m}>{monthLabel(m)}{m===ymNow?' (atual)':''}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* Top metrics */}
+      {!isCurrentMonth && (
+        <div style={{ background:'var(--amber-light)', color:'var(--amber-dark)', borderRadius:'var(--radius-sm)', padding:'10px 14px', fontSize:12.5, marginBottom:20 }}>
+          ℹ️ Visualizando um mês anterior. Os gastos fixos recorrentes só aparecem no mês atual.
+        </div>
+      )}
+
       <div className="metric-grid">
         <div className="metric-card">
           <div className="metric-label"><Receipt size={12}/> Total do mês</div>
           <div className="metric-value red">{fmt(total)}</div>
-          <div className="metric-sub">fixos + variáveis</div>
+          <div className="metric-sub">{isCurrentMonth ? 'fixos + variáveis' : 'variáveis'}</div>
         </div>
         <div className="metric-card">
           <div className="metric-label"><Home size={12}/> Despesas de casa</div>
           <div className="metric-value blue">{fmt(totalCasa)}</div>
           <div className="metric-sub">{thisMonth.filter(e=>(e.tipo||'casa')==='casa').length} lançamentos</div>
         </div>
-        <div className="metric-card">
-          <div className="metric-label"><RefreshCw size={12}/> Fixos ativos</div>
-          <div className="metric-value purple">{fmt(totalFixed)}</div>
-          <div className="metric-sub">{fixedList.filter(f=>f.active).length} itens</div>
-        </div>
+        {isCurrentMonth && (
+          <div className="metric-card">
+            <div className="metric-label"><RefreshCw size={12}/> Fixos ativos</div>
+            <div className="metric-value purple">{fmt(totalFixed)}</div>
+            <div className="metric-sub">{fixedList.filter(f=>f.active).length} itens</div>
+          </div>
+        )}
         <div className="metric-card">
           <div className="metric-label"><Tag size={12}/> Maior categoria</div>
           <div className="metric-value" style={{ fontSize:17 }}>
@@ -89,35 +113,24 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
 
       {/* Casa × Pessoal breakdown */}
       <div className="card" style={{ padding:24, marginBottom:20 }}>
-        <div className="section-title">Casa × Pessoal — {monthLabel(ym)}</div>
+        <div className="section-title">Casa × Pessoal — {monthLabel(selMonth)}</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
-          {/* Casa */}
           <div style={{ background:'var(--blue-light)', borderRadius:'var(--radius-sm)', padding:'16px 18px' }}>
             <div style={{ fontSize:12, fontWeight:700, color:'var(--blue-mid)', marginBottom:6 }}>🏠 Casa</div>
             <div style={{ fontSize:22, fontWeight:700, color:'var(--blue-dark)' }}>{fmt(totalCasa)}</div>
-            <div style={{ fontSize:11, color:'var(--blue-mid)', marginTop:4 }}>
-              {total>0?Math.round(totalCasa/total*100):0}% do total
-            </div>
+            <div style={{ fontSize:11, color:'var(--blue-mid)', marginTop:4 }}>{total>0?Math.round(totalCasa/total*100):0}% do total</div>
           </div>
-          {/* Pessoal owner */}
           <div style={{ background:'var(--amber-light)', borderRadius:'var(--radius-sm)', padding:'16px 18px' }}>
             <div style={{ fontSize:12, fontWeight:700, color:'var(--amber-dark)', marginBottom:6 }}>👤 {ownerName}</div>
             <div style={{ fontSize:22, fontWeight:700, color:'var(--amber-dark)' }}>{fmt(totalPessoalOwner)}</div>
-            <div style={{ fontSize:11, color:'var(--amber-dark)', marginTop:4 }}>
-              {total>0?Math.round(totalPessoalOwner/total*100):0}% do total
-            </div>
+            <div style={{ fontSize:11, color:'var(--amber-dark)', marginTop:4 }}>{total>0?Math.round(totalPessoalOwner/total*100):0}% do total</div>
           </div>
-          {/* Pessoal spouse */}
           <div style={{ background:'var(--green-light)', borderRadius:'var(--radius-sm)', padding:'16px 18px' }}>
             <div style={{ fontSize:12, fontWeight:700, color:'var(--green-dark)', marginBottom:6 }}>👤 {spouseName}</div>
             <div style={{ fontSize:22, fontWeight:700, color:'var(--green-dark)' }}>{fmt(totalPessoalSpouse)}</div>
-            <div style={{ fontSize:11, color:'var(--green-dark)', marginTop:4 }}>
-              {total>0?Math.round(totalPessoalSpouse/total*100):0}% do total
-            </div>
+            <div style={{ fontSize:11, color:'var(--green-dark)', marginTop:4 }}>{total>0?Math.round(totalPessoalSpouse/total*100):0}% do total</div>
           </div>
         </div>
-
-        {/* Proportion bar */}
         {total>0&&(
           <div style={{ height:10, borderRadius:20, overflow:'hidden', display:'flex', gap:2 }}>
             <div style={{ width:`${Math.round(totalCasa/total*100)}%`, background:'#185FA5', transition:'width 0.4s' }}/>
@@ -160,7 +173,7 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
       {/* Recent */}
       <div className="card">
         <div style={{ padding:'18px 20px 0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div className="section-title" style={{ marginBottom:0 }}>Últimos lançamentos</div>
+          <div className="section-title" style={{ marginBottom:0 }}>Lançamentos de {monthLabel(selMonth)}</div>
           <button onClick={()=>onNavigate('entries')}
             style={{ fontSize:13, color:'var(--blue-mid)', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, fontWeight:600 }}>
             Ver todos <ArrowRight size={14}/>
@@ -168,7 +181,7 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
         </div>
         <div style={{ marginTop:10 }}>
           {recent.length===0
-            ?<div className="empty-state"><div className="empty-state-icon">📋</div>Nenhum lançamento este mês.</div>
+            ?<div className="empty-state"><div className="empty-state-icon">📋</div>Nenhum lançamento neste mês.</div>
             :recent.map(e=>{
               const cat=CAT_MAP[e.cat]||{};
               const isPessoal=e.tipo==='pessoal';
