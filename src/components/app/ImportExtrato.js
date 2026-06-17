@@ -2,8 +2,8 @@ import React, { useState, useRef } from 'react';
 import { CATEGORIES, TIPOS, fmt, today, getResponsaveis } from '../../helpers';
 import { Upload, X, Loader, CheckCircle, AlertCircle, Plus, Trash2, ImagePlus } from 'lucide-react';
 
-const GEMINI_KEY = 'AQ.Ab8RN6LMyoxh19cvmt98f-LAeSOCKbY7_FZXA06EtAZlfh2ctA';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
+const GEMINI_KEY = 'AQ.Ab8RN6JngoeYX2Zq4A00I7PfGCs7H_p7Hm80B_IbRGmrlhep0A';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 export default function ImportExtrato({ profile, onSave }) {
   const [images, setImages]       = useState([]); // [{file, preview, base64}]
@@ -82,7 +82,7 @@ Se não encontrar lançamentos, retorne [].`;
 
       const response = await fetch(GEMINI_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GEMINI_KEY },
         body: JSON.stringify({
           contents: [{ parts }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
