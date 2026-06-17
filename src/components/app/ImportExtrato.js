@@ -2,10 +2,9 @@ import React, { useState, useRef } from 'react';
 import { CATEGORIES, TIPOS, fmt, getResponsaveis } from '../../helpers';
 import { Loader, CheckCircle, AlertCircle, Trash2, FileText } from 'lucide-react';
 
-// Mapeamento palavra-chave -> categoria + tipo (casa = compartilhado, pessoal = individual)
 const RULES = [
   { kw: ['supermercado','hipermercado','supermercados','coopel','atacad','mercado','supermercados bh'], cat: 'Alimentação', tipo: 'casa' },
-  { kw: ['posto','gasolina','combustivel','shell','ipiranga','petrobras','cabaceira','campinho','quati','central buriti'], cat: 'Transporte', tipo: 'casa' },
+  { kw: ['posto','gasolina','combustivel','cabaceira','campinho','quati','central buriti'], cat: 'Transporte', tipo: 'casa' },
   { kw: ['uber','uberrid','99app','99 *','cabify','taxi'], cat: 'Transporte', tipo: 'pessoal' },
   { kw: ['restaurante','churrasc','churrasquinho','chopp','porcao','lanchonete','pizzaria','acai','cia do acai','snacks','bacio','latte','cafe','padaria','paiol','samucas','felix','delicias','vicentin','cotta','queijo','trem do','primos disk','jucimar','roziane','bar'], cat: 'Lazer', tipo: 'pessoal' },
   { kw: ['spotify','netflix','apple.com','google','amazon prime','youtube','hbo','disney','ebn *'], cat: 'Assinaturas', tipo: 'casa' },
@@ -19,25 +18,36 @@ const RULES = [
 
 function classify(desc) {
   const d = desc.toLowerCase();
-  for (const rule of RULES) {
-    if (rule.kw.some(k => d.includes(k))) return { cat: rule.cat, tipo: rule.tipo };
-  }
+  for (const rule of RULES) if (rule.kw.some(k => d.includes(k))) return { cat: rule.cat, tipo: rule.tipo };
   return { cat: 'Outros', tipo: 'casa' };
 }
 
-const MONTHS = { JAN:'01', FEV:'02', MAR:'03', ABR:'04', MAI:'05', JUN:'06', JUL:'07', AGO:'08', SET:'09', OUT:'10', NOV:'11', DEZ:'12' };
+const MONTHS_IDX = { JAN:0,FEV:1,MAR:2,ABR:3,MAI:4,JUN:5,JUL:6,AGO:7,SET:8,OUT:9,NOV:10,DEZ:11 };
+const MONTHS_NUM = { JAN:'01',FEV:'02',MAR:'03',ABR:'04',MAI:'05',JUN:'06',JUL:'07',AGO:'08',SET:'09',OUT:'10',NOV:'11',DEZ:'12' };
 
 function parseTransactions(text) {
   const items = [];
   const lines = text.replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Detecta vencimento da fatura: "VENCIMENTO 11 JUN 2026"
+  let dueDay = '11', dueMonthIdx = null, dueYear = new Date().getFullYear();
+  const vm = text.match(/VENCIMENTO\s+(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(\d{4})/i);
+  if (vm) {
+    dueDay = vm[1];
+    dueMonthIdx = MONTHS_IDX[vm[2].toUpperCase()];
+    dueYear = parseInt(vm[3]);
+  }
+  const dueDateStr = dueMonthIdx !== null
+    ? `${dueYear}-${String(dueMonthIdx + 1).padStart(2, '0')}-${dueDay}`
+    : null;
+
   const lineRe = /^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+R?\$?\s*([\d.,]+)\s*$/i;
-  const year = new Date().getFullYear();
 
   for (const line of lines) {
     const m = line.match(lineRe);
     if (!m) continue;
     const dia = m[1];
-    const mes = MONTHS[m[2].toUpperCase()];
+    const mesAbbr = m[2].toUpperCase();
     let resto = m[3].trim();
     let valStr = m[4];
     const low = resto.toLowerCase();
@@ -52,16 +62,33 @@ function parseTransactions(text) {
     else val = parseFloat(valStr.replace(',', '.'));
     if (!val || val <= 0) continue;
 
+    // É parcela? tem padrão XX/XX
+    const parcMatch = resto.match(/(\d{2})\/(\d{2})/);
+    const isParcela = !!parcMatch;
+
     let desc = resto
       .replace(/\s+\d{2}\/\d{2}\s*/g, ' ')
       .replace(/\s+(BELO HORIZONT\w*|SAO PAULO|POMPEU|PARAOPEBA|CURITIBA|CAJAMAR|OSASCO|ESMERALDAS|BH)\s*$/i, '')
       .trim();
 
-    const parcMatch = resto.match(/(\d{2}\/\d{2})/);
-    const obs = parcMatch ? `Parcela ${parcMatch[1]} · Importado` : 'Importado do PDF';
-    const { cat, tipo } = classify(desc);
+    // Define data:
+    // - parcela -> data de vencimento (mês do pagamento)
+    // - à vista -> data real (ajustando ano se o mês for posterior ao vencimento = ano anterior)
+    let finalDate;
+    if (isParcela && dueDateStr) {
+      finalDate = dueDateStr;
+    } else {
+      let y = dueYear;
+      if (dueMonthIdx !== null && MONTHS_IDX[mesAbbr] > dueMonthIdx) y = dueYear - 1;
+      finalDate = `${y}-${MONTHS_NUM[mesAbbr]}-${dia}`;
+    }
 
-    items.push({ id: Date.now() + Math.random(), desc: desc || 'Lançamento', val, date: `${year}-${mes}-${dia}`, cat, tipo, resp: 'Casal', obs, selected: true });
+    const obs = isParcela
+      ? `Parcela ${parcMatch[0]} · Importado`
+      : 'Importado do PDF';
+
+    const { cat, tipo } = classify(desc);
+    items.push({ id: Date.now() + Math.random(), desc: desc || 'Lançamento', val, date: finalDate, cat, tipo, resp: 'Casal', obs, isParcela, selected: true });
   }
   return items;
 }
@@ -139,13 +166,14 @@ export default function ImportExtrato({ profile, onSave }) {
 
   const selectedCount = items.filter(it => it.selected).length;
   const selectedTotal = items.filter(it => it.selected).reduce((s,it)=>s+it.val,0);
+  const parcelaCount  = items.filter(it => it.isParcela).length;
 
   return (
     <div>
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700 }}>Importar Fatura (PDF)</h1>
         <p style={{ fontSize: 14, color: 'var(--gray-mid)', marginTop: 4 }}>
-          Suba o PDF da fatura do cartão — lido e classificado automaticamente, sem custo
+          Suba o PDF da fatura — lido e classificado automaticamente, sem custo
         </p>
       </div>
 
@@ -182,12 +210,18 @@ export default function ImportExtrato({ profile, onSave }) {
 
       {items.length > 0 && (
         <div className="form-card">
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
             <div className="form-section-title" style={{ marginBottom:0 }}>2. Revise os {items.length} lançamentos</div>
             <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, color:'var(--gray-mid)', cursor:'pointer' }}>
               <input type="checkbox" checked={items.every(it=>it.selected)} onChange={toggleAll}/> Selecionar todos
             </label>
           </div>
+
+          {parcelaCount > 0 && (
+            <div style={{ background:'var(--amber-light)', color:'var(--amber-dark)', borderRadius:8, padding:'10px 14px', fontSize:12.5, marginBottom:14, lineHeight:1.5 }}>
+              ℹ️ {parcelaCount} parcela{parcelaCount!==1?'s':''} de compras antigas {parcelaCount!==1?'foram movidas':'foi movida'} para a data de vencimento da fatura. Compras à vista mantêm a data original.
+            </div>
+          )}
 
           <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16, maxHeight:520, overflowY:'auto' }}>
             {items.map(item => {
@@ -197,8 +231,11 @@ export default function ImportExtrato({ profile, onSave }) {
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <input type="checkbox" checked={item.selected} onChange={()=>toggleItem(item.id)} style={{ flexShrink:0 }}/>
                     <div style={{ flex:1, display:'grid', gridTemplateColumns:'2fr 1fr 1.1fr 1.2fr 1fr 1fr', gap:6, alignItems:'center' }}>
-                      <input value={item.desc} onChange={e=>updateItem(item.id,'desc',e.target.value)}
-                        style={{ height:32, padding:'0 8px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:12, fontFamily:'inherit', background:'white', outline:'none' }}/>
+                      <div>
+                        <input value={item.desc} onChange={e=>updateItem(item.id,'desc',e.target.value)}
+                          style={{ width:'100%', height:32, padding:'0 8px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:12, fontFamily:'inherit', background:'white', outline:'none' }}/>
+                        {item.isParcela && <span style={{ fontSize:9, fontWeight:700, color:'var(--amber-dark)' }}>↪ parcela movida p/ vencimento</span>}
+                      </div>
                       <input type="number" value={item.val} onChange={e=>updateItem(item.id,'val',parseFloat(e.target.value)||0)}
                         style={{ height:32, padding:'0 8px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:12, fontFamily:'inherit', background:'white', outline:'none' }}/>
                       <input type="date" value={item.date} onChange={e=>updateItem(item.id,'date',e.target.value)}
