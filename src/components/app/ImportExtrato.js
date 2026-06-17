@@ -3,7 +3,7 @@ import { CATEGORIES, TIPOS, fmt, today, getResponsaveis } from '../../helpers';
 import { Upload, X, Loader, CheckCircle, AlertCircle, Plus, Trash2, ImagePlus } from 'lucide-react';
 
 const GEMINI_KEY = 'AQ.Ab8RN6LMyoxh19cvmt98f-LAeSOCKbY7_FZXA06EtAZlfh2ctA';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
 
 export default function ImportExtrato({ profile, onSave }) {
   const [images, setImages]       = useState([]); // [{file, preview, base64}]
