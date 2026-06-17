@@ -2,19 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { auth, db } from '../../firebase';
 import { signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, setDoc, query, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { LayoutDashboard, ListChecks, BarChart2, Target, RefreshCw, LogOut, Wifi, WifiOff } from 'lucide-react';
-import Overview from './Overview';
-import Entries from './Entries';
-import Fixed from './Fixed';
-import Charts from './Charts';
-import Budget from './Budget';
+import { LayoutDashboard, ListChecks, BarChart2, Target, RefreshCw, LogOut, Wifi, WifiOff, FileUp } from 'lucide-react';
+import Overview      from './Overview';
+import Entries       from './Entries';
+import Fixed         from './Fixed';
+import Charts        from './Charts';
+import Budget        from './Budget';
+import ImportExtrato from './ImportExtrato';
 
 const TABS = [
-  { id:'overview', label:'Visão Geral',  icon:LayoutDashboard },
-  { id:'entries',  label:'Lançamentos',  icon:ListChecks },
-  { id:'fixed',    label:'Gastos Fixos', icon:RefreshCw },
-  { id:'charts',   label:'Gráficos',     icon:BarChart2 },
-  { id:'budget',   label:'Orçamento',    icon:Target },
+  { id:'overview', label:'Visão Geral',    icon:LayoutDashboard },
+  { id:'entries',  label:'Lançamentos',    icon:ListChecks },
+  { id:'import',   label:'Importar',       icon:FileUp },
+  { id:'fixed',    label:'Gastos Fixos',   icon:RefreshCw },
+  { id:'charts',   label:'Gráficos',       icon:BarChart2 },
+  { id:'budget',   label:'Orçamento',      icon:Target },
 ];
 
 export default function UserApp({ user, profile }) {
@@ -24,7 +26,7 @@ export default function UserApp({ user, profile }) {
   const [budget, setBudgetState]  = useState({ total:0, cats:{} });
   const [online, setOnline]       = useState(true);
 
-  const uid = user.uid;
+  const uid  = user.uid;
   const base = (col) => collection(db, 'users', uid, col);
 
   useEffect(() => {
@@ -41,12 +43,12 @@ export default function UserApp({ user, profile }) {
     return onSnapshot(doc(db,'users',uid,'config','budget'), s => { if(s.exists()) setBudgetState(s.data()); });
   }, [uid]);
 
-  const addExpense    = (e)       => addDoc(base('expenses'), {...e, createdAt:serverTimestamp()});
-  const deleteExpense = (id)      => deleteDoc(doc(db,'users',uid,'expenses',id));
-  const addFixed      = (f)       => addDoc(base('fixed'), {...f, createdAt:serverTimestamp()});
-  const deleteFixed   = (id)      => deleteDoc(doc(db,'users',uid,'fixed',id));
-  const toggleFixed   = (id,val)  => updateDoc(doc(db,'users',uid,'fixed',id), {active:val});
-  const saveBudget    = (b)       => { setBudgetState(b); setDoc(doc(db,'users',uid,'config','budget'), b); };
+  const addExpense    = (e)      => addDoc(base('expenses'), {...e, createdAt:serverTimestamp()});
+  const deleteExpense = (id)     => deleteDoc(doc(db,'users',uid,'expenses',id));
+  const addFixed      = (f)      => addDoc(base('fixed'),   {...f, createdAt:serverTimestamp()});
+  const deleteFixed   = (id)     => deleteDoc(doc(db,'users',uid,'fixed',id));
+  const toggleFixed   = (id,val) => updateDoc(doc(db,'users',uid,'fixed',id), {active:val});
+  const saveBudget    = (b)      => { setBudgetState(b); setDoc(doc(db,'users',uid,'config','budget'), b); };
 
   return (
     <div className="app-shell">
@@ -68,7 +70,7 @@ export default function UserApp({ user, profile }) {
           </nav>
           <div className="app-header-right">
             <div className="sync-badge">
-              {online ? <><Wifi size={12}/><span>Online</span></> : <><WifiOff size={12}/><span>Offline</span></>}
+              {online?<><Wifi size={12}/><span>Online</span></>:<><WifiOff size={12}/><span>Offline</span></>}
             </div>
             <button className="logout-btn" onClick={()=>signOut(auth)}>
               <LogOut size={13}/> Sair
@@ -78,11 +80,12 @@ export default function UserApp({ user, profile }) {
       </header>
 
       <main className="app-main">
-        {tab==='overview' && <Overview expenses={expenses} fixedList={fixedList} budget={budget} profile={profile} onNavigate={setTab}/>}
-        {tab==='entries'  && <Entries  expenses={expenses} fixedList={fixedList} profile={profile} onAdd={addExpense} onDelete={deleteExpense}/>}
-        {tab==='fixed'    && <Fixed    fixedList={fixedList} profile={profile} onAdd={addFixed} onDelete={deleteFixed} onToggle={toggleFixed}/>}
-        {tab==='charts'   && <Charts   expenses={expenses} fixedList={fixedList} profile={profile}/>}
-        {tab==='budget'   && <Budget   expenses={expenses} fixedList={fixedList} budget={budget} setBudget={saveBudget}/>}
+        {tab==='overview' && <Overview      expenses={expenses} fixedList={fixedList} budget={budget} profile={profile} onNavigate={setTab}/>}
+        {tab==='entries'  && <Entries       expenses={expenses} fixedList={fixedList} profile={profile} onAdd={addExpense} onDelete={deleteExpense}/>}
+        {tab==='import'   && <ImportExtrato profile={profile} onSave={addExpense}/>}
+        {tab==='fixed'    && <Fixed         fixedList={fixedList} profile={profile} onAdd={addFixed} onDelete={deleteFixed} onToggle={toggleFixed}/>}
+        {tab==='charts'   && <Charts        expenses={expenses} fixedList={fixedList} profile={profile}/>}
+        {tab==='budget'   && <Budget        expenses={expenses} fixedList={fixedList} budget={budget} setBudget={saveBudget}/>}
       </main>
     </div>
   );

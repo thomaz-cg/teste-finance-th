@@ -1,7 +1,7 @@
 import React from 'react';
 import { fmt, currentYM, monthLabel, getLast6Months, expensesByMonth, totalByCategory, CAT_MAP, fixedAsExpenses } from '../../helpers';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Receipt, Tag, Wallet, RefreshCw, ArrowRight, Home, User } from 'lucide-react';
+import { Receipt, Tag, Wallet, RefreshCw, ArrowRight, Home } from 'lucide-react';
 
 export default function Overview({ expenses, fixedList, budget, profile, onNavigate }) {
   const ym          = currentYM();
@@ -9,11 +9,12 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
   const thisMonth   = [...expensesByMonth(expenses,ym), ...activeFixed];
   const total       = thisMonth.reduce((s,e)=>s+e.val,0);
   const totalFixed  = activeFixed.reduce((s,f)=>s+f.val,0);
-  const totalVar    = expensesByMonth(expenses,ym).reduce((s,e)=>s+e.val,0);
 
   // casa vs pessoal
-  const totalCasa    = thisMonth.filter(e=>(e.tipo||'casa')==='casa').reduce((s,e)=>s+e.val,0);
-  const totalPessoal = thisMonth.filter(e=>e.tipo==='pessoal').reduce((s,e)=>s+e.val,0);
+  const totalCasa       = thisMonth.filter(e=>(e.tipo||'casa')==='casa').reduce((s,e)=>s+e.val,0);
+  const totalPessoalOwner  = thisMonth.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.ownerName).reduce((s,e)=>s+e.val,0);
+  const totalPessoalSpouse = thisMonth.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.spouseName).reduce((s,e)=>s+e.val,0);
+  const totalPessoal    = totalPessoalOwner + totalPessoalSpouse;
 
   const catTotals  = totalByCategory(thisMonth);
   const topCat     = Object.entries(catTotals).sort((a,b)=>b[1]-a[1])[0];
@@ -26,7 +27,8 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
     return {
       name: monthLabel(m),
       Casa:    all.filter(e=>(e.tipo||'casa')==='casa').reduce((s,e)=>s+e.val,0),
-      Pessoal: all.filter(e=>e.tipo==='pessoal').reduce((s,e)=>s+e.val,0),
+      [profile?.ownerName||'Eu']:    all.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.ownerName).reduce((s,e)=>s+e.val,0),
+      [profile?.spouseName||'Cônjuge']: all.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.spouseName).reduce((s,e)=>s+e.val,0),
     };
   });
 
@@ -42,14 +44,17 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
   };
 
   const recent = expensesByMonth(expenses,ym).slice(0,5);
+  const ownerName  = profile?.ownerName  || 'Eu';
+  const spouseName = profile?.spouseName || 'Cônjuge';
 
   return (
     <div>
       <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:22, fontWeight:700 }}>Olá, {profile?.ownerName}! 👋</h1>
+        <h1 style={{ fontSize:22, fontWeight:700 }}>Olá, {ownerName}! 👋</h1>
         <p style={{ fontSize:14, color:'var(--gray-mid)', marginTop:4 }}>Resumo de {monthLabel(ym)}</p>
       </div>
 
+      {/* Top metrics */}
       <div className="metric-grid">
         <div className="metric-card">
           <div className="metric-label"><Receipt size={12}/> Total do mês</div>
@@ -60,11 +65,6 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
           <div className="metric-label"><Home size={12}/> Despesas de casa</div>
           <div className="metric-value blue">{fmt(totalCasa)}</div>
           <div className="metric-sub">{thisMonth.filter(e=>(e.tipo||'casa')==='casa').length} lançamentos</div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label"><User size={12}/> Gastos pessoais</div>
-          <div className="metric-value amber">{fmt(totalPessoal)}</div>
-          <div className="metric-sub">{thisMonth.filter(e=>e.tipo==='pessoal').length} lançamentos</div>
         </div>
         <div className="metric-card">
           <div className="metric-label"><RefreshCw size={12}/> Fixos ativos</div>
@@ -87,50 +87,72 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
         </div>
       </div>
 
-      {/* Casa vs Pessoal bar */}
+      {/* Casa × Pessoal breakdown */}
       <div className="card" style={{ padding:24, marginBottom:20 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-          <div className="section-title" style={{ marginBottom:0 }}>Casa × Pessoal — {monthLabel(ym)}</div>
-        </div>
-        <div style={{ display:'flex', gap:12, marginBottom:16 }}>
-          <div style={{ flex:1, background:'var(--blue-light)', borderRadius:'var(--radius-sm)', padding:'14px 16px' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--blue-mid)', marginBottom:4 }}>🏠 Casa</div>
-            <div style={{ fontSize:20, fontWeight:700, color:'var(--blue-dark)' }}>{fmt(totalCasa)}</div>
-            <div style={{ fontSize:11, color:'var(--blue-mid)', marginTop:2 }}>{total>0?Math.round(totalCasa/total*100):0}% do total</div>
+        <div className="section-title">Casa × Pessoal — {monthLabel(ym)}</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
+          {/* Casa */}
+          <div style={{ background:'var(--blue-light)', borderRadius:'var(--radius-sm)', padding:'16px 18px' }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--blue-mid)', marginBottom:6 }}>🏠 Casa</div>
+            <div style={{ fontSize:22, fontWeight:700, color:'var(--blue-dark)' }}>{fmt(totalCasa)}</div>
+            <div style={{ fontSize:11, color:'var(--blue-mid)', marginTop:4 }}>
+              {total>0?Math.round(totalCasa/total*100):0}% do total
+            </div>
           </div>
-          <div style={{ flex:1, background:'var(--amber-light)', borderRadius:'var(--radius-sm)', padding:'14px 16px' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--amber-dark)', marginBottom:4 }}>👤 Pessoal</div>
-            <div style={{ fontSize:20, fontWeight:700, color:'var(--amber-dark)' }}>{fmt(totalPessoal)}</div>
-            <div style={{ fontSize:11, color:'var(--amber-dark)', marginTop:2 }}>{total>0?Math.round(totalPessoal/total*100):0}% do total</div>
+          {/* Pessoal owner */}
+          <div style={{ background:'var(--amber-light)', borderRadius:'var(--radius-sm)', padding:'16px 18px' }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--amber-dark)', marginBottom:6 }}>👤 {ownerName}</div>
+            <div style={{ fontSize:22, fontWeight:700, color:'var(--amber-dark)' }}>{fmt(totalPessoalOwner)}</div>
+            <div style={{ fontSize:11, color:'var(--amber-dark)', marginTop:4 }}>
+              {total>0?Math.round(totalPessoalOwner/total*100):0}% do total
+            </div>
+          </div>
+          {/* Pessoal spouse */}
+          <div style={{ background:'var(--green-light)', borderRadius:'var(--radius-sm)', padding:'16px 18px' }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--green-dark)', marginBottom:6 }}>👤 {spouseName}</div>
+            <div style={{ fontSize:22, fontWeight:700, color:'var(--green-dark)' }}>{fmt(totalPessoalSpouse)}</div>
+            <div style={{ fontSize:11, color:'var(--green-dark)', marginTop:4 }}>
+              {total>0?Math.round(totalPessoalSpouse/total*100):0}% do total
+            </div>
           </div>
         </div>
-        {/* visual proportion bar */}
+
+        {/* Proportion bar */}
         {total>0&&(
           <div style={{ height:10, borderRadius:20, overflow:'hidden', display:'flex', gap:2 }}>
-            <div style={{ width:`${Math.round(totalCasa/total*100)}%`, background:'#185FA5', borderRadius:'20px 0 0 20px', transition:'width 0.4s' }}/>
-            <div style={{ flex:1, background:'#854F0B', borderRadius:'0 20px 20px 0' }}/>
+            <div style={{ width:`${Math.round(totalCasa/total*100)}%`, background:'#185FA5', transition:'width 0.4s' }}/>
+            <div style={{ width:`${Math.round(totalPessoalOwner/total*100)}%`, background:'#854F0B', transition:'width 0.4s' }}/>
+            <div style={{ flex:1, background:'#3B6D11' }}/>
           </div>
         )}
+        <div style={{ display:'flex', gap:16, marginTop:10, flexWrap:'wrap' }}>
+          {[['#185FA5','🏠 Casa'],['#854F0B',`👤 ${ownerName}`],['#3B6D11',`👤 ${spouseName}`]].map(([c,l])=>(
+            <span key={l} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--gray-mid)' }}>
+              <span style={{ width:8, height:8, borderRadius:2, background:c, display:'inline-block' }}></span>{l}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* 6 months chart */}
       <div className="card" style={{ padding:24, marginBottom:20 }}>
-        <div className="section-title">Últimos 6 meses — Casa × Pessoal</div>
-        <div style={{ display:'flex', gap:16, marginBottom:12 }}>
-          {[['#185FA5','Casa'],['#854F0B','Pessoal']].map(([c,l])=>(
+        <div className="section-title">Últimos 6 meses</div>
+        <div style={{ display:'flex', gap:16, marginBottom:12, flexWrap:'wrap' }}>
+          {[['#185FA5','🏠 Casa'],['#854F0B',`👤 ${ownerName}`],['#3B6D11',`👤 ${spouseName}`]].map(([c,l])=>(
             <span key={l} style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--gray-mid)' }}>
-              <span style={{ width:10, height:10, borderRadius:2, background:c, display:'inline-block' }}></span> {l}
+              <span style={{ width:10, height:10, borderRadius:2, background:c, display:'inline-block' }}></span>{l}
             </span>
           ))}
         </div>
         <ResponsiveContainer width="100%" height={210}>
-          <BarChart data={chartData} barCategoryGap="30%">
+          <BarChart data={chartData} barCategoryGap="25%">
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false}/>
             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize:12, fill:'#888' }}/>
             <YAxis axisLine={false} tickLine={false} tick={{ fontSize:12, fill:'#888' }} tickFormatter={v=>`R$${(v/1000).toFixed(0)}k`}/>
             <Tooltip content={<CustomTooltip/>} cursor={{ fill:'rgba(24,95,165,0.06)' }}/>
-            <Bar dataKey="Casa"    fill="#185FA5" radius={[0,0,0,0]} stackId="a"/>
-            <Bar dataKey="Pessoal" fill="#854F0B" radius={[6,6,0,0]} stackId="a"/>
+            <Bar dataKey="Casa"       fill="#185FA5" radius={[0,0,0,0]} stackId="a"/>
+            <Bar dataKey={ownerName}  fill="#854F0B" radius={[0,0,0,0]} stackId="a"/>
+            <Bar dataKey={spouseName} fill="#3B6D11" radius={[6,6,0,0]} stackId="a"/>
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -149,14 +171,16 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
             ?<div className="empty-state"><div className="empty-state-icon">📋</div>Nenhum lançamento este mês.</div>
             :recent.map(e=>{
               const cat=CAT_MAP[e.cat]||{};
-              const tipo=e.tipo==='pessoal'?{icon:'👤',bg:'#FAEEDA',color:'#854F0B'}:{icon:'🏠',bg:'#E6F1FB',color:'#185FA5'};
+              const isPessoal=e.tipo==='pessoal';
+              const tipoColor = isPessoal&&e.resp===spouseName ? {bg:'#EAF3DE',color:'#3B6D11'} : isPessoal ? {bg:'#FAEEDA',color:'#854F0B'} : {bg:'#E6F1FB',color:'#185FA5'};
+              const tipoIcon  = isPessoal ? '👤' : '🏠';
               return (
                 <div key={e.id} className="expense-item">
                   <div className="expense-icon" style={{ background:cat.bg }}>{cat.icon||'📦'}</div>
                   <div className="expense-info">
                     <div style={{ display:'flex', alignItems:'center', gap:7 }}>
                       <span className="expense-desc">{e.desc}</span>
-                      <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:20, background:tipo.bg, color:tipo.color }}>{tipo.icon}</span>
+                      <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:20, background:tipoColor.bg, color:tipoColor.color }}>{tipoIcon} {isPessoal?e.resp:'Casa'}</span>
                     </div>
                     <div className="expense-meta">{e.cat} · {e.resp} · {e.date}</div>
                   </div>
