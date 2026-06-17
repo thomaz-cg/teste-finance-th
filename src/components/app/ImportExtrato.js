@@ -1,315 +1,236 @@
 import React, { useState, useRef } from 'react';
-import { CATEGORIES, TIPOS, fmt, today, getResponsaveis } from '../../helpers';
-import { Upload, X, Loader, CheckCircle, AlertCircle, Plus, Trash2, ImagePlus } from 'lucide-react';
+import { CATEGORIES, TIPOS, fmt, getResponsaveis } from '../../helpers';
+import { Loader, CheckCircle, AlertCircle, Trash2, FileText } from 'lucide-react';
 
-const OPENROUTER_KEY = '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';
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// Mapeamento palavra-chave -> categoria + tipo (casa = compartilhado, pessoal = individual)
+const RULES = [
+  { kw: ['supermercado','hipermercado','supermercados','coopel','atacad','mercado','supermercados bh'], cat: 'Alimentação', tipo: 'casa' },
+  { kw: ['posto','gasolina','combustivel','shell','ipiranga','petrobras','cabaceira','campinho','quati','central buriti'], cat: 'Transporte', tipo: 'casa' },
+  { kw: ['uber','uberrid','99app','99 *','cabify','taxi'], cat: 'Transporte', tipo: 'pessoal' },
+  { kw: ['restaurante','churrasc','churrasquinho','chopp','porcao','lanchonete','pizzaria','acai','cia do acai','snacks','bacio','latte','cafe','padaria','paiol','samucas','felix','delicias','vicentin','cotta','queijo','trem do','primos disk','jucimar','roziane','bar'], cat: 'Lazer', tipo: 'pessoal' },
+  { kw: ['spotify','netflix','apple.com','google','amazon prime','youtube','hbo','disney','ebn *'], cat: 'Assinaturas', tipo: 'casa' },
+  { kw: ['biomax','farmacia','drogaria','hospital','mater dei','americana saude','clinica','laboratorio','drogasil','pacheco'], cat: 'Saúde', tipo: 'casa' },
+  { kw: ['moncler','hugo boss','centauro','bhs','lore','renner','riachuelo','zara','c&a','beleza na web','adriana silva','darlene','belo horizonte shopp'], cat: 'Vestuário', tipo: 'pessoal' },
+  { kw: ['hotel','palace','airbnb','pousada','resort','nita palace'], cat: 'Lazer', tipo: 'pessoal' },
+  { kw: ['floricultura','flores','presente','recanto'], cat: 'Lazer', tipo: 'pessoal' },
+  { kw: ['zurich','seguro','seguros','porto seg'], cat: 'Outros', tipo: 'casa' },
+  { kw: ['anuidade'], cat: 'Outros', tipo: 'casa' },
+];
 
-export default function ImportExtrato({ profile, onSave }) {
-  const [images, setImages]       = useState([]); // [{file, preview, base64}]
-  const [items, setItems]         = useState([]); // parsed items
-  const [status, setStatus]       = useState('idle'); // idle | loading | done | error
-  const [errorMsg, setErrorMsg]   = useState('');
-  const [saving, setSaving]       = useState(false);
-  const [savedCount, setSavedCount] = useState(0);
-  const inputRef = useRef();
-
-  const responsaveis = getResponsaveis(profile);
-
-  const toBase64 = (file) => new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result.split(',')[1]);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-
-  const handleFiles = async (files) => {
-    const newImgs = [];
-    for (const file of files) {
-      if (!file.type.startsWith('image/')) continue;
-      const base64  = await toBase64(file);
-      const preview = URL.createObjectURL(file);
-      newImgs.push({ file, preview, base64, mimeType: file.type });
-    }
-    setImages(prev => [...prev, ...newImgs]);
-    setStatus('idle');
-    setItems([]);
-    setSavedCount(0);
-  };
-
-  const removeImage = (i) => {
-    setImages(prev => prev.filter((_,idx) => idx !== i));
-    setItems([]);
-    setStatus('idle');
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    handleFiles(Array.from(e.dataTransfer.files));
-  };
-
-  const analyze = async () => {
-    if (!images.length) return;
-    setStatus('loading');
-    setErrorMsg('');
-    setItems([]);
-
-    try {
-      const prompt = `Você é um assistente financeiro. Analise ${images.length > 1 ? 'estas imagens de extrato de cartão de crédito' : 'esta imagem de extrato de cartão de crédito'} e extraia TODOS os lançamentos encontrados.
-
-Para cada lançamento retorne um JSON array com objetos no formato:
-{
-  "desc": "descrição do gasto (limpa e legível)",
-  "val": 0.00,
-  "date": "YYYY-MM-DD",
-  "cat": "uma de: Moradia, Alimentação, Transporte, Saúde, Educação, Lazer, Vestuário, Pets, Assinaturas, Outros",
-  "tipo": "casa ou pessoal",
-  "resp": "Casal"
+function classify(desc) {
+  const d = desc.toLowerCase();
+  for (const rule of RULES) {
+    if (rule.kw.some(k => d.includes(k))) return { cat: rule.cat, tipo: rule.tipo };
+  }
+  return { cat: 'Outros', tipo: 'casa' };
 }
 
-Regras de classificação:
-- tipo "casa": supermercado, aluguel, contas (água, luz, internet, gás), farmácia básica, material de limpeza
-- tipo "pessoal": restaurante, roupa, lazer, streaming, academia, beleza, eletrônicos, delivery, bar
-- Se a data não estiver clara, use a data de hoje (${today()})
-- Retorne APENAS o JSON array, sem texto adicional, sem markdown, sem explicações
+const MONTHS = { JAN:'01', FEV:'02', MAR:'03', ABR:'04', MAI:'05', JUN:'06', JUL:'07', AGO:'08', SET:'09', OUT:'10', NOV:'11', DEZ:'12' };
 
-Se não encontrar lançamentos, retorne [].`;
+function parseTransactions(text) {
+  const items = [];
+  const lines = text.replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+  const lineRe = /^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+R?\$?\s*([\d.,]+)\s*$/i;
+  const year = new Date().getFullYear();
 
-      // Build messages with images for OpenRouter
-      const userContent = [{ type: 'text', text: prompt }];
-      for (const img of images) {
-        userContent.push({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.base64}` } });
+  for (const line of lines) {
+    const m = line.match(lineRe);
+    if (!m) continue;
+    const dia = m[1];
+    const mes = MONTHS[m[2].toUpperCase()];
+    let resto = m[3].trim();
+    let valStr = m[4];
+    const low = resto.toLowerCase();
+
+    if (low.includes('pagamento') || low.includes('saldo') || low.includes('desc anuidade') ||
+        low.includes('estorno') || low.includes('credito') || low.includes('anterior')) continue;
+    if (line.includes('-R$') || line.includes('- R$')) continue;
+
+    let val = 0;
+    if (/,\d{3}\.\d{2}$/.test(valStr)) val = parseFloat(valStr.replace(/,/g, ''));
+    else if (/\.\d{3},\d{2}$/.test(valStr)) val = parseFloat(valStr.replace(/\./g, '').replace(',', '.'));
+    else val = parseFloat(valStr.replace(',', '.'));
+    if (!val || val <= 0) continue;
+
+    let desc = resto
+      .replace(/\s+\d{2}\/\d{2}\s*/g, ' ')
+      .replace(/\s+(BELO HORIZONT\w*|SAO PAULO|POMPEU|PARAOPEBA|CURITIBA|CAJAMAR|OSASCO|ESMERALDAS|BH)\s*$/i, '')
+      .trim();
+
+    const parcMatch = resto.match(/(\d{2}\/\d{2})/);
+    const obs = parcMatch ? `Parcela ${parcMatch[1]} · Importado` : 'Importado do PDF';
+    const { cat, tipo } = classify(desc);
+
+    items.push({ id: Date.now() + Math.random(), desc: desc || 'Lançamento', val, date: `${year}-${mes}-${dia}`, cat, tipo, resp: 'Casal', obs, selected: true });
+  }
+  return items;
+}
+
+export default function ImportExtrato({ profile, onSave }) {
+  const [items, setItems]       = useState([]);
+  const [status, setStatus]     = useState('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
+  const [fileName, setFileName] = useState('');
+  const inputRef = useRef();
+  const responsaveis = getResponsaveis(profile);
+
+  const loadPdfJs = () => new Promise((resolve, reject) => {
+    if (window.pdfjsLib) return resolve(window.pdfjsLib);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    s.onerror = reject;
+    document.body.appendChild(s);
+  });
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf') { alert('Envie um arquivo PDF.'); return; }
+    setFileName(file.name);
+    setStatus('loading'); setErrorMsg(''); setItems([]); setSavedCount(0);
+    try {
+      const pdfjsLib = await loadPdfJs();
+      const buffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      let fullText = '';
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const rows = {};
+        content.items.forEach(it => {
+          const y = Math.round(it.transform[5]);
+          if (!rows[y]) rows[y] = [];
+          rows[y].push({ x: it.transform[4], s: it.str });
+        });
+        Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y => {
+          const line = rows[y].sort((a,b)=>a.x-b.x).map(r=>r.s).join(' ').replace(/\s+/g,' ').trim();
+          if (line) fullText += line + '\n';
+        });
       }
-
-      const response = await fetch(OPENROUTER_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + OPENROUTER_KEY,
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'Financas do Casal',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-exp:free',
-          messages: [{ role: 'user', content: userContent }],
-          temperature: 0.1,
-          max_tokens: 4096,
-        })
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err?.error?.message || 'Erro na API');
-      }
-
-      const data = await response.json();
-      let text = data.choices?.[0]?.message?.content || '';
-      text = text.replace(/```json|```/g, '').trim();
-
-      const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) throw new Error('Resposta inesperada da IA');
-
-      // sanitize
-      const clean = parsed.map((item, i) => ({
-        id:   Date.now() + i,
-        desc: item.desc || 'Sem descrição',
-        val:  parseFloat(item.val) || 0,
-        date: item.date || today(),
-        cat:  CATEGORIES.find(c => c.id === item.cat) ? item.cat : 'Outros',
-        tipo: item.tipo === 'pessoal' ? 'pessoal' : 'casa',
-        resp: responsaveis.includes(item.resp) ? item.resp : 'Casal',
-        selected: true,
-      }));
-
-      setItems(clean);
-      setStatus('done');
+      const parsed = parseTransactions(fullText);
+      if (!parsed.length) { setErrorMsg('Não encontrei lançamentos no PDF. O formato pode ser diferente do esperado.'); setStatus('error'); return; }
+      setItems(parsed); setStatus('done');
     } catch (e) {
       console.error(e);
-      setErrorMsg(e.message || 'Erro ao analisar as imagens.');
+      setErrorMsg('Erro ao ler o PDF: ' + (e.message || 'desconhecido'));
       setStatus('error');
     }
   };
 
-  const updateItem = (id, field, value) => {
-    setItems(prev => prev.map(it => it.id === id ? { ...it, [field]: value } : it));
-  };
-
-  const removeItem = (id) => setItems(prev => prev.filter(it => it.id !== id));
-
-  const toggleItem = (id) => updateItem(id, 'selected', !items.find(it => it.id === id)?.selected);
-
-  const toggleAll = () => {
-    const allSelected = items.every(it => it.selected);
-    setItems(prev => prev.map(it => ({ ...it, selected: !allSelected })));
-  };
+  const updateItem = (id, field, value) => setItems(prev => prev.map(it => it.id===id ? {...it,[field]:value} : it));
+  const removeItem = (id) => setItems(prev => prev.filter(it => it.id!==id));
+  const toggleItem = (id) => setItems(prev => prev.map(it => it.id===id ? {...it,selected:!it.selected} : it));
+  const toggleAll = () => { const all = items.every(it=>it.selected); setItems(prev=>prev.map(it=>({...it,selected:!all}))); };
 
   const handleSave = async () => {
     const toSave = items.filter(it => it.selected && it.val > 0);
     if (!toSave.length) { alert('Nenhum item selecionado.'); return; }
     setSaving(true);
     for (const item of toSave) {
-      await onSave({ desc: item.desc, val: item.val, date: item.date, cat: item.cat, tipo: item.tipo, resp: item.resp, obs: 'Importado do extrato' });
+      await onSave({ desc: item.desc, val: item.val, date: item.date, cat: item.cat, tipo: item.tipo, resp: item.resp, obs: item.obs });
     }
-    setSavedCount(toSave.length);
-    setItems([]);
-    setImages([]);
-    setStatus('idle');
-    setSaving(false);
+    setSavedCount(toSave.length); setItems([]); setFileName(''); setStatus('idle'); setSaving(false);
   };
 
   const selectedCount = items.filter(it => it.selected).length;
-  const selectedTotal = items.filter(it => it.selected).reduce((s, it) => s + it.val, 0);
+  const selectedTotal = items.filter(it => it.selected).reduce((s,it)=>s+it.val,0);
 
   return (
     <div>
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Importar Extrato</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Importar Fatura (PDF)</h1>
         <p style={{ fontSize: 14, color: 'var(--gray-mid)', marginTop: 4 }}>
-          Suba prints do extrato do cartão — a IA classifica os gastos automaticamente
+          Suba o PDF da fatura do cartão — lido e classificado automaticamente, sem custo
         </p>
       </div>
 
       {savedCount > 0 && (
-        <div style={{ background: 'var(--green-light)', color: 'var(--green-dark)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600 }}>
-          <CheckCircle size={18}/> {savedCount} lançamento{savedCount !== 1 ? 's' : ''} importado{savedCount !== 1 ? 's' : ''} com sucesso!
+        <div style={{ background:'var(--green-light)', color:'var(--green-dark)', borderRadius:'var(--radius-md)', padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'center', gap:10, fontWeight:600 }}>
+          <CheckCircle size={18}/> {savedCount} lançamento{savedCount!==1?'s':''} importado{savedCount!==1?'s':''} com sucesso!
         </div>
       )}
 
-      {/* Upload area */}
       <div className="form-card">
-        <div className="form-section-title">1. Suba os prints do extrato</div>
-
-        <div
-          onDrop={handleDrop}
-          onDragOver={e => e.preventDefault()}
-          onClick={() => inputRef.current?.click()}
-          style={{ border: '2px dashed rgba(24,95,165,0.3)', borderRadius: 'var(--radius-md)', padding: '32px 24px', textAlign: 'center', cursor: 'pointer', background: 'var(--blue-light)', transition: 'all 0.15s', marginBottom: 16 }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--blue-mid)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(24,95,165,0.3)'}
-        >
-          <ImagePlus size={32} color="var(--blue-mid)" style={{ marginBottom: 10 }} />
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--blue-dark)', marginBottom: 4 }}>
-            Clique ou arraste os prints aqui
+        <div className="form-section-title">1. Suba o PDF da fatura</div>
+        <div onClick={()=>inputRef.current?.click()}
+          onDrop={e=>{e.preventDefault();handleFile(e.dataTransfer.files[0]);}} onDragOver={e=>e.preventDefault()}
+          style={{ border:'2px dashed rgba(24,95,165,0.3)', borderRadius:'var(--radius-md)', padding:'36px 24px', textAlign:'center', cursor:'pointer', background:'var(--blue-light)', marginBottom:16 }}>
+          <FileText size={32} color="var(--blue-mid)" style={{ marginBottom:10 }} />
+          <div style={{ fontSize:15, fontWeight:600, color:'var(--blue-dark)', marginBottom:4 }}>
+            {fileName || 'Clique ou arraste o PDF da fatura aqui'}
           </div>
-          <div style={{ fontSize: 13, color: 'var(--blue-mid)' }}>
-            Suporta múltiplas imagens — JPG, PNG, WEBP
-          </div>
-          <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-            onChange={e => handleFiles(Array.from(e.target.files))} />
+          <div style={{ fontSize:13, color:'var(--blue-mid)' }}>100% no navegador — nada é enviado para servidores</div>
+          <input ref={inputRef} type="file" accept="application/pdf" style={{ display:'none' }} onChange={e=>handleFile(e.target.files[0])} />
         </div>
 
-        {/* Image previews */}
-        {images.length > 0 && (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-            {images.map((img, i) => (
-              <div key={i} style={{ position: 'relative', width: 90, height: 90 }}>
-                <img src={img.preview} alt={`extrato ${i+1}`}
-                  style={{ width: 90, height: 90, objectFit: 'cover', borderRadius: 8, border: '2px solid var(--blue-light)' }} />
-                <button onClick={(e) => { e.stopPropagation(); removeImage(i); }}
-                  style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: '50%', background: 'var(--red-dark)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <X size={12} color="white"/>
-                </button>
-                <div style={{ position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: 'white', fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
-                  Print {i+1}
-                </div>
-              </div>
-            ))}
-            {/* Add more button */}
-            <div onClick={() => inputRef.current?.click()}
-              style={{ width: 90, height: 90, border: '2px dashed rgba(24,95,165,0.3)', borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--blue-mid)', gap: 4 }}>
-              <Plus size={20}/>
-              <span style={{ fontSize: 10, fontWeight: 600 }}>Adicionar</span>
-            </div>
+        {status==='loading' && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, padding:16, color:'var(--blue-mid)', fontWeight:600 }}>
+            <Loader size={18} className="spin"/> Lendo o PDF...
           </div>
         )}
-
-        <button className="btn-primary" onClick={analyze} disabled={!images.length || status === 'loading'}
-          style={{ background: images.length ? 'var(--blue-dark)' : 'var(--gray-mid)' }}>
-          {status === 'loading'
-            ? <><Loader size={16} className="spin"/> Analisando com IA...</>
-            : <><Upload size={16}/> Analisar {images.length > 0 ? `${images.length} imagem${images.length > 1 ? 's' : ''}` : 'imagens'}</>}
-        </button>
-
-        {status === 'error' && (
-          <div style={{ marginTop: 12, background: 'var(--red-light)', color: 'var(--red-dark)', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {status==='error' && (
+          <div style={{ background:'var(--red-light)', color:'var(--red-dark)', borderRadius:8, padding:'10px 14px', fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:8 }}>
             <AlertCircle size={16}/> {errorMsg}
           </div>
         )}
       </div>
 
-      {/* Results */}
       {items.length > 0 && (
         <div className="form-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div className="form-section-title" style={{ marginBottom: 0 }}>
-              2. Revise e ajuste os lançamentos
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--gray-mid)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={items.every(it => it.selected)} onChange={toggleAll}/>
-              Selecionar todos
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+            <div className="form-section-title" style={{ marginBottom:0 }}>2. Revise os {items.length} lançamentos</div>
+            <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, color:'var(--gray-mid)', cursor:'pointer' }}>
+              <input type="checkbox" checked={items.every(it=>it.selected)} onChange={toggleAll}/> Selecionar todos
             </label>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16, maxHeight:520, overflowY:'auto' }}>
             {items.map(item => {
-              const tipoInfo = TIPOS.find(t => t.id === item.tipo) || TIPOS[0];
+              const tipoInfo = TIPOS.find(t=>t.id===item.tipo) || TIPOS[0];
               return (
-                <div key={item.id} style={{ border: `1.5px solid ${item.selected ? 'rgba(24,95,165,0.25)' : 'rgba(0,0,0,0.08)'}`, borderRadius: 'var(--radius-sm)', padding: '12px 14px', background: item.selected ? 'var(--blue-light)' : 'var(--gray-light)', opacity: item.selected ? 1 : 0.6, transition: 'all 0.15s' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <input type="checkbox" checked={item.selected} onChange={() => toggleItem(item.id)} style={{ marginTop: 3, flexShrink: 0 }}/>
-                    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8, flexWrap: 'wrap' }}>
-                      {/* desc */}
-                      <input value={item.desc} onChange={e => updateItem(item.id, 'desc', e.target.value)}
-                        style={{ height: 34, padding: '0 10px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}/>
-                      {/* val */}
-                      <input type="number" value={item.val} onChange={e => updateItem(item.id, 'val', parseFloat(e.target.value)||0)}
-                        style={{ height: 34, padding: '0 10px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}/>
-                      {/* date */}
-                      <input type="date" value={item.date} onChange={e => updateItem(item.id, 'date', e.target.value)}
-                        style={{ height: 34, padding: '0 10px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}/>
-                      {/* cat */}
-                      <select value={item.cat} onChange={e => updateItem(item.id, 'cat', e.target.value)}
-                        style={{ height: 34, padding: '0 8px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
-                        {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.id}</option>)}
+                <div key={item.id} style={{ border:`1.5px solid ${item.selected?'rgba(24,95,165,0.25)':'rgba(0,0,0,0.08)'}`, borderRadius:'var(--radius-sm)', padding:'10px 12px', background:item.selected?'var(--blue-light)':'var(--gray-light)', opacity:item.selected?1:0.55 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <input type="checkbox" checked={item.selected} onChange={()=>toggleItem(item.id)} style={{ flexShrink:0 }}/>
+                    <div style={{ flex:1, display:'grid', gridTemplateColumns:'2fr 1fr 1.1fr 1.2fr 1fr 1fr', gap:6, alignItems:'center' }}>
+                      <input value={item.desc} onChange={e=>updateItem(item.id,'desc',e.target.value)}
+                        style={{ height:32, padding:'0 8px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:12, fontFamily:'inherit', background:'white', outline:'none' }}/>
+                      <input type="number" value={item.val} onChange={e=>updateItem(item.id,'val',parseFloat(e.target.value)||0)}
+                        style={{ height:32, padding:'0 8px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:12, fontFamily:'inherit', background:'white', outline:'none' }}/>
+                      <input type="date" value={item.date} onChange={e=>updateItem(item.id,'date',e.target.value)}
+                        style={{ height:32, padding:'0 6px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:11, fontFamily:'inherit', background:'white', outline:'none' }}/>
+                      <select value={item.cat} onChange={e=>updateItem(item.id,'cat',e.target.value)}
+                        style={{ height:32, padding:'0 6px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:11, fontFamily:'inherit', background:'white', outline:'none' }}>
+                        {CATEGORIES.map(c=><option key={c.id} value={c.id}>{c.icon} {c.id}</option>)}
                       </select>
-                      {/* tipo */}
-                      <select value={item.tipo} onChange={e => updateItem(item.id, 'tipo', e.target.value)}
-                        style={{ height: 34, padding: '0 8px', border: `1.5px solid ${tipoInfo.color}`, borderRadius: 6, fontSize: 13, fontFamily: 'inherit', background: tipoInfo.bg, color: tipoInfo.color, fontWeight: 600, outline: 'none' }}>
-                        {TIPOS.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                      <select value={item.tipo} onChange={e=>updateItem(item.id,'tipo',e.target.value)}
+                        style={{ height:32, padding:'0 6px', border:`1.5px solid ${tipoInfo.color}`, borderRadius:6, fontSize:11, fontFamily:'inherit', background:tipoInfo.bg, color:tipoInfo.color, fontWeight:600, outline:'none' }}>
+                        {TIPOS.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
                       </select>
-                      {/* resp */}
-                      <select value={item.resp} onChange={e => updateItem(item.id, 'resp', e.target.value)}
-                        style={{ height: 34, padding: '0 8px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
-                        {responsaveis.map(r => <option key={r} value={r}>{r}</option>)}
+                      <select value={item.resp} onChange={e=>updateItem(item.id,'resp',e.target.value)}
+                        style={{ height:32, padding:'0 6px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:11, fontFamily:'inherit', background:'white', outline:'none' }}>
+                        {responsaveis.map(r=><option key={r} value={r}>{r}</option>)}
                       </select>
                     </div>
-                    <button onClick={() => removeItem(item.id)} className="btn-icon" style={{ flexShrink: 0 }}>
-                      <Trash2 size={14}/>
-                    </button>
+                    <button onClick={()=>removeItem(item.id)} className="btn-icon" style={{ flexShrink:0 }}><Trash2 size={14}/></button>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Save bar */}
-          <div style={{ background: 'var(--blue-dark)', borderRadius: 'var(--radius-sm)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ color: 'white', fontSize: 14 }}>
-              <span style={{ fontWeight: 700 }}>{selectedCount} lançamento{selectedCount !== 1 ? 's' : ''}</span> selecionado{selectedCount !== 1 ? 's' : ''} · Total: <span style={{ fontWeight: 700 }}>{fmt(selectedTotal)}</span>
+          <div style={{ background:'var(--blue-dark)', borderRadius:'var(--radius-sm)', padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+            <div style={{ color:'white', fontSize:14 }}>
+              <span style={{ fontWeight:700 }}>{selectedCount}</span> selecionado{selectedCount!==1?'s':''} · Total: <span style={{ fontWeight:700 }}>{fmt(selectedTotal)}</span>
             </div>
             <button onClick={handleSave} disabled={saving || !selectedCount}
-              style={{ height: 38, padding: '0 24px', background: 'white', color: 'var(--blue-dark)', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: selectedCount ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 8, opacity: selectedCount ? 1 : 0.5 }}>
+              style={{ height:38, padding:'0 24px', background:'white', color:'var(--blue-dark)', border:'none', borderRadius:6, fontSize:14, fontWeight:700, cursor:selectedCount?'pointer':'not-allowed', display:'flex', alignItems:'center', gap:8, opacity:selectedCount?1:0.5 }}>
               {saving ? <><Loader size={14} className="spin"/> Salvando...</> : <><CheckCircle size={14}/> Salvar selecionados</>}
             </button>
-          </div>
-        </div>
-      )}
-
-      {status === 'done' && items.length === 0 && (
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state-icon">🔍</div>
-            Nenhum lançamento encontrado nas imagens. Tente com outro print.
           </div>
         </div>
       )}
