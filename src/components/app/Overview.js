@@ -20,6 +20,8 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
   const totalCasa          = thisMonth.filter(e=>(e.tipo||'casa')==='casa').reduce((s,e)=>s+e.val,0);
   const totalPessoalOwner  = thisMonth.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.ownerName).reduce((s,e)=>s+e.val,0);
   const totalPessoalSpouse = thisMonth.filter(e=>e.tipo==='pessoal'&&e.resp===profile?.spouseName).reduce((s,e)=>s+e.val,0);
+  // pessoais sem dono valido (importados antigos resp=Casal) -> agrupados separadamente para os numeros baterem
+  const totalSemDono = thisMonth.filter(e=>e.tipo==='pessoal' && e.resp!==profile?.ownerName && e.resp!==profile?.spouseName).reduce((s,e)=>s+e.val,0);
 
   const catTotals  = totalByCategory(thisMonth);
   const topCat     = Object.entries(catTotals).sort((a,b)=>b[1]-a[1])[0];
@@ -74,6 +76,12 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
       {!isCurrentMonth && (
         <div style={{ background:'var(--amber-light)', color:'var(--amber-dark)', borderRadius:'var(--radius-sm)', padding:'10px 14px', fontSize:12.5, marginBottom:20 }}>
           ℹ️ Visualizando um mês anterior. Os gastos fixos recorrentes só aparecem no mês atual.
+        </div>
+      )}
+
+      {totalSemDono > 0 && (
+        <div style={{ background:'var(--amber-light)', color:'var(--amber-dark)', borderRadius:'var(--radius-sm)', padding:'12px 16px', fontSize:13, marginBottom:20, lineHeight:1.5 }}>
+          ⚠️ <strong>{fmt(totalSemDono)}</strong> em gastos marcados como "Pessoal" mas sem dono definido (responsável "Casal"). Eles entram no total mas não aparecem nos boxes de Thomaz/Roberta. Vá em <strong>Lançamentos</strong> e ajuste o responsável, ou reimporte a fatura marcando o dono do cartão.
         </div>
       )}
 

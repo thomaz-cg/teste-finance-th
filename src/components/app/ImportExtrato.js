@@ -25,7 +25,7 @@ function classify(desc) {
 const MONTHS_IDX = { JAN:0,FEV:1,MAR:2,ABR:3,MAI:4,JUN:5,JUL:6,AGO:7,SET:8,OUT:9,NOV:10,DEZ:11 };
 const MONTHS_NUM = { JAN:'01',FEV:'02',MAR:'03',ABR:'04',MAI:'05',JUN:'06',JUL:'07',AGO:'08',SET:'09',OUT:'10',NOV:'11',DEZ:'12' };
 
-function parseTransactions(text) {
+function parseTransactions(text, cardOwner) {
   const items = [];
   const lines = text.replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
 
@@ -88,7 +88,8 @@ function parseTransactions(text) {
       : 'Importado do PDF';
 
     const { cat, tipo } = classify(desc);
-    items.push({ id: Date.now() + Math.random(), desc: desc || 'Lançamento', val, date: finalDate, cat, tipo, resp: 'Casal', obs, isParcela, selected: true });
+    const resp = tipo === 'pessoal' ? cardOwner : 'Casal';
+    items.push({ id: Date.now() + Math.random(), desc: desc || 'Lançamento', val, date: finalDate, cat, tipo, resp, obs, isParcela, selected: true });
   }
   return items;
 }
@@ -100,6 +101,7 @@ export default function ImportExtrato({ profile, onSave }) {
   const [saving, setSaving]     = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [fileName, setFileName] = useState('');
+  const [cardOwner, setCardOwner] = useState(profile?.ownerName || 'Casal');
   const inputRef = useRef();
   const responsaveis = getResponsaveis(profile);
 
@@ -139,7 +141,7 @@ export default function ImportExtrato({ profile, onSave }) {
           if (line) fullText += line + '\n';
         });
       }
-      const parsed = parseTransactions(fullText);
+      const parsed = parseTransactions(fullText, cardOwner);
       if (!parsed.length) { setErrorMsg('Não encontrei lançamentos no PDF. O formato pode ser diferente do esperado.'); setStatus('error'); return; }
       setItems(parsed); setStatus('done');
     } catch (e) {
@@ -184,7 +186,25 @@ export default function ImportExtrato({ profile, onSave }) {
       )}
 
       <div className="form-card">
-        <div className="form-section-title">1. Suba o PDF da fatura</div>
+        <div className="form-section-title">1. De quem é este cartão?</div>
+        <div style={{ display:'flex', gap:10, marginBottom:18 }}>
+          {(profile ? [profile.ownerName, profile.spouseName] : ['Eu','Cônjuge']).map(name => (
+            <button key={name} onClick={()=>setCardOwner(name)}
+              style={{ flex:1, height:48, border:`2px solid ${cardOwner===name?'var(--blue-mid)':'rgba(0,0,0,0.10)'}`,
+                borderRadius:'var(--radius-sm)', background:cardOwner===name?'var(--blue-light)':'transparent',
+                color:cardOwner===name?'var(--blue-dark)':'var(--gray-mid)', fontWeight:700, fontSize:15,
+                cursor:'pointer', transition:'all 0.15s', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+              💳 {name}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize:12.5, color:'var(--gray-mid)', lineHeight:1.5, padding:'10px 14px', background:'var(--gray-light)', borderRadius:8 }}>
+          ℹ️ Despesas marcadas como <strong>Pessoal</strong> serão atribuídas a <strong>{cardOwner}</strong>. Despesas de <strong>Casa</strong> ficam como gasto compartilhado do casal.
+        </div>
+      </div>
+
+      <div className="form-card">
+        <div className="form-section-title">2. Suba o PDF da fatura</div>
         <div onClick={()=>inputRef.current?.click()}
           onDrop={e=>{e.preventDefault();handleFile(e.dataTransfer.files[0]);}} onDragOver={e=>e.preventDefault()}
           style={{ border:'2px dashed rgba(24,95,165,0.3)', borderRadius:'var(--radius-md)', padding:'36px 24px', textAlign:'center', cursor:'pointer', background:'var(--blue-light)', marginBottom:16 }}>
@@ -211,7 +231,7 @@ export default function ImportExtrato({ profile, onSave }) {
       {items.length > 0 && (
         <div className="form-card">
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-            <div className="form-section-title" style={{ marginBottom:0 }}>2. Revise os {items.length} lançamentos</div>
+            <div className="form-section-title" style={{ marginBottom:0 }}>3. Revise os {items.length} lançamentos</div>
             <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, color:'var(--gray-mid)', cursor:'pointer' }}>
               <input type="checkbox" checked={items.every(it=>it.selected)} onChange={toggleAll}/> Selecionar todos
             </label>
