@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { CATEGORIES, CAT_MAP, TIPOS, fmt, today, getMonths, monthLabel, currentYM, fixedAsExpenses, getResponsaveis } from '../../helpers';
-import { Plus, Trash2, RefreshCw, CheckSquare, Square, X } from 'lucide-react';
+import { CATEGORIES, CAT_MAP, TIPOS, fmt, today, getMonths, monthLabel, fixedAsExpenses, getResponsaveis } from '../../helpers';
+import { Plus, Trash2, RefreshCw, CheckSquare, Square, X, Pencil, Save } from 'lucide-react';
 
-export default function Entries({ expenses, fixedList, profile, onAdd, onDelete }) {
+export default function Entries({ expenses, fixedList, profile, onAdd, onDelete, onUpdate }) {
   const [form, setForm] = useState({ desc:'', val:'', date:today(), cat:'Alimentação', resp:'Casal', tipo:'casa', obs:'' });
   const [filterMonth, setFilterMonth] = useState('all');
   const [filterCat,   setFilterCat]   = useState('all');
@@ -10,10 +10,13 @@ export default function Entries({ expenses, fixedList, profile, onAdd, onDelete 
   const [showFixed,   setShowFixed]   = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // selection mode
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected]     = useState(new Set());
   const [deleting, setDeleting]     = useState(false);
+
+  // edit modal
+  const [editing, setEditing] = useState(null); // {id, desc, val, date, cat, tipo, resp, obs}
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const responsaveis = getResponsaveis(profile);
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
@@ -36,43 +39,38 @@ export default function Entries({ expenses, fixedList, profile, onAdd, onDelete 
     (filterTipo==='all'  || (e.tipo||'casa')===filterTipo)
   );
   const filteredTotal = filtered.reduce((s,e)=>s+e.val,0);
-
-  // só lançamentos reais (não fixos) podem ser selecionados/apagados
   const selectableFiltered = filtered.filter(e => !e.isFixed);
 
-  const toggleSelect = (id) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
+  const toggleSelect = (id) => setSelected(prev => { const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
   const selectAllVisible = () => {
-    const allIds = selectableFiltered.map(e => e.id);
-    const allSelected = allIds.every(id => selected.has(id));
-    if (allSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(allIds));
-    }
+    const ids = selectableFiltered.map(e=>e.id);
+    setSelected(ids.every(id=>selected.has(id)) ? new Set() : new Set(ids));
   };
-
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()); };
 
   const handleBulkDelete = async () => {
     if (!selected.size) return;
-    if (!window.confirm(`Apagar ${selected.size} lançamento${selected.size!==1?'s':''} selecionado${selected.size!==1?'s':''}? Esta ação não pode ser desfeita.`)) return;
+    if (!window.confirm(`Apagar ${selected.size} lançamento${selected.size!==1?'s':''}? Esta ação não pode ser desfeita.`)) return;
     setDeleting(true);
-    for (const id of selected) {
-      await onDelete(id);
-    }
-    setSelected(new Set());
-    setSelectMode(false);
-    setDeleting(false);
+    for (const id of selected) await onDelete(id);
+    setSelected(new Set()); setSelectMode(false); setDeleting(false);
   };
 
-  const selectedTotal = selectableFiltered.filter(e => selected.has(e.id)).reduce((s,e)=>s+e.val,0);
+  const selectedTotal = selectableFiltered.filter(e=>selected.has(e.id)).reduce((s,e)=>s+e.val,0);
+
+  // edit handlers
+  const openEdit = (e) => setEditing({ id:e.id, desc:e.desc, val:String(e.val), date:e.date, cat:e.cat, tipo:e.tipo||'casa', resp:e.resp, obs:e.obs||'' });
+  const setEdit = (k,v) => setEditing(p=>({...p,[k]:v}));
+  const saveEdit = async () => {
+    if (!editing.desc.trim()||!editing.val||parseFloat(editing.val)<=0) { alert('Preencha descrição e valor.'); return; }
+    setSavingEdit(true);
+    await onUpdate(editing.id, {
+      desc: editing.desc.trim(), val: parseFloat(editing.val), date: editing.date,
+      cat: editing.cat, tipo: editing.tipo, resp: editing.resp, obs: editing.obs.trim(),
+    });
+    setSavingEdit(false);
+    setEditing(null);
+  };
 
   return (
     <div>
@@ -173,7 +171,6 @@ export default function Entries({ expenses, fixedList, profile, onAdd, onDelete 
         {filtered.length>0 && !selectMode && <span style={{ marginLeft:'auto', fontSize:14, fontWeight:700, color:'var(--blue-dark)' }}>Total: {fmt(filteredTotal)}</span>}
       </div>
 
-      {/* Select-all bar in select mode */}
       {selectMode && (
         <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12, padding:'10px 14px', background:'var(--blue-light)', borderRadius:'var(--radius-sm)', flexWrap:'wrap' }}>
           <button onClick={selectAllVisible}
@@ -216,16 +213,20 @@ export default function Entries({ expenses, fixedList, profile, onAdd, onDelete 
                 </div>
                 <div className="expense-amount">{fmt(e.val)}</div>
                 {!selectMode && !e.isFixed && (
-                  <button className="btn-icon" onClick={(ev)=>{ev.stopPropagation(); if(window.confirm(`Remover "${e.desc}"?`))onDelete(e.id);}}>
-                    <Trash2 size={15}/>
-                  </button>
+                  <div style={{ display:'flex', gap:2, flexShrink:0 }}>
+                    <button className="btn-icon" title="Editar" onClick={(ev)=>{ev.stopPropagation(); openEdit(e);}} style={{ color:'var(--blue-mid)' }}>
+                      <Pencil size={15}/>
+                    </button>
+                    <button className="btn-icon" title="Remover" onClick={(ev)=>{ev.stopPropagation(); if(window.confirm(`Remover "${e.desc}"?`))onDelete(e.id);}}>
+                      <Trash2 size={15}/>
+                    </button>
+                  </div>
                 )}
               </div>
             );
           })}
       </div>
 
-      {/* Floating bulk delete bar */}
       {selectMode && selected.size > 0 && (
         <div style={{ position:'sticky', bottom:16, marginTop:16, background:'var(--blue-dark)', borderRadius:'var(--radius-md)', padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap', boxShadow:'0 6px 24px rgba(0,0,0,0.25)' }}>
           <div style={{ color:'white', fontSize:14 }}>
@@ -235,6 +236,76 @@ export default function Entries({ expenses, fixedList, profile, onAdd, onDelete 
             style={{ height:38, padding:'0 20px', background:'#fff', color:'var(--red-dark)', border:'none', borderRadius:6, fontSize:14, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:8 }}>
             {deleting ? <>Apagando...</> : <><Trash2 size={15}/> Apagar selecionados</>}
           </button>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editing && (
+        <div onClick={()=>setEditing(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}>
+          <div onClick={ev=>ev.stopPropagation()}
+            style={{ background:'white', borderRadius:'var(--radius-lg)', padding:24, width:'100%', maxWidth:520, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+              <h2 style={{ fontSize:18, fontWeight:700 }}>Editar lançamento</h2>
+              <button onClick={()=>setEditing(null)} className="btn-icon"><X size={18}/></button>
+            </div>
+
+            <div style={{ display:'flex', gap:10, marginBottom:16 }}>
+              {TIPOS.map(t=>(
+                <button key={t.id} onClick={()=>setEdit('tipo',t.id)}
+                  style={{ flex:1, height:42, border:`2px solid ${editing.tipo===t.id?t.color:'rgba(0,0,0,0.10)'}`,
+                    borderRadius:'var(--radius-sm)', background:editing.tipo===t.id?t.bg:'transparent',
+                    color:editing.tipo===t.id?t.color:'var(--gray-mid)', fontWeight:700, fontSize:14,
+                    cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="form-group" style={{ marginBottom:12 }}>
+              <label>Descrição</label>
+              <input type="text" value={editing.desc} onChange={e=>setEdit('desc',e.target.value)}/>
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label>Valor (R$)</label>
+                <input type="number" min="0" step="0.01" value={editing.val} onChange={e=>setEdit('val',e.target.value)}/>
+              </div>
+              <div className="form-group">
+                <label>Data</label>
+                <input type="date" value={editing.date} onChange={e=>setEdit('date',e.target.value)}/>
+              </div>
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label>Categoria</label>
+                <select value={editing.cat} onChange={e=>setEdit('cat',e.target.value)}>
+                  {CATEGORIES.map(c=><option key={c.id} value={c.id}>{c.icon} {c.id}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Responsável</label>
+                <select value={editing.resp} onChange={e=>setEdit('resp',e.target.value)}>
+                  {responsaveis.map(r=><option key={r} value={r}>{r}</option>)}
+                  {!responsaveis.includes(editing.resp) && <option value={editing.resp}>{editing.resp}</option>}
+                </select>
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom:20 }}>
+              <label>Observações</label>
+              <input type="text" value={editing.obs} onChange={e=>setEdit('obs',e.target.value)}/>
+            </div>
+
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={()=>setEditing(null)}
+                style={{ flex:1, height:42, background:'white', color:'var(--gray-mid)', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:'var(--radius-sm)', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={saveEdit} disabled={savingEdit} className="btn-primary" style={{ flex:2 }}>
+                <Save size={16}/> {savingEdit?'Salvando...':'Salvar alterações'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

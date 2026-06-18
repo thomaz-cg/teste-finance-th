@@ -45,6 +45,7 @@ export default function UserApp({ user, profile }) {
 
   const addExpense    = (e)      => addDoc(base('expenses'), {...e, createdAt:serverTimestamp()});
   const deleteExpense = (id)     => deleteDoc(doc(db,'users',uid,'expenses',id));
+  const updateExpense = (id, data) => updateDoc(doc(db,'users',uid,'expenses',id), data);
   const addFixed      = (f)      => addDoc(base('fixed'),   {...f, createdAt:serverTimestamp()});
   const deleteFixed   = (id)     => deleteDoc(doc(db,'users',uid,'fixed',id));
   const toggleFixed   = (id,val) => updateDoc(doc(db,'users',uid,'fixed',id), {active:val});
@@ -81,7 +82,7 @@ export default function UserApp({ user, profile }) {
 
       <main className="app-main">
         {tab==='overview' && <Overview      expenses={expenses} fixedList={fixedList} budget={budget} profile={profile} onNavigate={setTab}/>}
-        {tab==='entries'  && <Entries       expenses={expenses} fixedList={fixedList} profile={profile} onAdd={addExpense} onDelete={deleteExpense}/>}
+        {tab==='entries'  && <Entries       expenses={expenses} fixedList={fixedList} profile={profile} onAdd={addExpense} onDelete={deleteExpense} onUpdate={updateExpense}/>}
         {tab==='import'   && <ImportExtrato profile={profile} onSave={addExpense}/>}
         {tab==='fixed'    && <Fixed         fixedList={fixedList} profile={profile} onAdd={addFixed} onDelete={deleteFixed} onToggle={toggleFixed}/>}
         {tab==='charts'   && <Charts        expenses={expenses} fixedList={fixedList} profile={profile}/>}
