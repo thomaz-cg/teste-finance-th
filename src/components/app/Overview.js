@@ -122,7 +122,7 @@ export default function Overview({ expenses, fixedList, budget, profile, onNavig
       {/* Casa × Pessoal breakdown */}
       <div className="card" style={{ padding:24, marginBottom:20 }}>
         <div className="section-title">Casa × Pessoal — {monthLabel(selMonth)}</div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
+        <div className="casa-pessoal-grid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
           <div style={{ background:'var(--blue-light)', borderRadius:'var(--radius-sm)', padding:'16px 18px' }}>
             <div style={{ fontSize:12, fontWeight:700, color:'var(--blue-mid)', marginBottom:6 }}>🏠 Casa</div>
             <div style={{ fontSize:22, fontWeight:700, color:'var(--blue-dark)' }}>{fmt(totalCasa)}</div>
