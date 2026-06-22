@@ -72,9 +72,9 @@ export default function AdminPanel({ user }) {
       <header className="app-header">
         <div className="app-header-inner">
           <div className="app-logo">
-            <span className="app-logo-icon">💰</span>
+            <img src="/logo-shield.png" alt="Nosso Assessor" className="app-logo-icon" />
             <div>
-              <div className="app-logo-title">Finanças do Casal</div>
+              <div className="app-logo-title">Nosso Assessor</div>
               <div className="app-logo-sub">Painel Administrativo</div>
             </div>
           </div>

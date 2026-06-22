@@ -50,8 +50,8 @@ export default function Register({ onSwitch }) {
     <div className="auth-bg">
       <div className="auth-card">
         <div className="auth-logo">
-          <span className="auth-logo-icon">💰</span>
-          <div className="auth-logo-title">Finanças do Casal</div>
+          <img src="/logo-shield.png" alt="Nosso Assessor" className="auth-logo-icon" />
+          <div className="auth-logo-title">Nosso Assessor</div>
           <div className="auth-logo-sub">Crie sua conta</div>
         </div>
 

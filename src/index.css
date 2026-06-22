@@ -55,7 +55,7 @@ input, select, textarea, button { font-family: var(--font); }
   margin-bottom: 28px;
 }
 
-.auth-logo-icon { font-size: 42px; display: block; margin-bottom: 8px; }
+.auth-logo-icon { width: 64px; height: 64px; object-fit: contain; display: block; margin: 0 auto; }
 .auth-logo-title { font-size: 22px; font-weight: 700; color: var(--blue-dark); }
 .auth-logo-sub { font-size: 13px; color: var(--gray-mid); margin-top: 4px; }
 
@@ -81,7 +81,7 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .app-header { background: var(--blue-dark); position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(0,0,0,0.18); }
 .app-header-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 64px; }
 .app-logo { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.app-logo-icon { font-size: 24px; }
+.app-logo-icon { width: 38px; height: 38px; object-fit: contain; display: block; }
 .app-logo-title { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.2; }
 .app-logo-sub { font-size: 11px; color: rgba(255,255,255,0.55); }
 .app-nav { display: flex; gap: 2px; }
@@ -181,7 +181,7 @@ html, body { overflow-x: hidden; max-width: 100%; }
 @media (max-width: 860px) {
   .app-header-inner { padding: 0 14px; height: 56px; gap: 8px; }
   .app-logo-sub { display: none; }
-  .app-logo-icon { font-size: 20px; }
+  .app-logo-icon { width: 32px; height: 32px; }
   .app-logo-title { font-size: 14px; }
   .app-nav { display: none; }
   .sync-badge span { display: none; }
