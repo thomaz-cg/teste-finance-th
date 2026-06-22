@@ -88,6 +88,15 @@ export default function UserApp({ user, profile }) {
         {tab==='charts'   && <Charts        expenses={expenses} fixedList={fixedList} profile={profile}/>}
         {tab==='budget'   && <Budget        expenses={expenses} fixedList={fixedList} budget={budget} setBudget={saveBudget}/>}
       </main>
+
+      {/* Bottom navigation - mobile only (controlado por CSS) */}
+      <nav className="app-nav-bottom">
+        {TABS.map(({id,label,icon:Icon})=>(
+          <button key={id} className={`nav-btn-bottom ${tab===id?'active':''}`} onClick={()=>setTab(id)}>
+            <Icon size={19}/><span>{label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

@@ -250,7 +250,7 @@ export default function ImportExtrato({ profile, onSave }) {
                 <div key={item.id} style={{ border:`1.5px solid ${item.selected?'rgba(24,95,165,0.25)':'rgba(0,0,0,0.08)'}`, borderRadius:'var(--radius-sm)', padding:'10px 12px', background:item.selected?'var(--blue-light)':'var(--gray-light)', opacity:item.selected?1:0.55 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <input type="checkbox" checked={item.selected} onChange={()=>toggleItem(item.id)} style={{ flexShrink:0 }}/>
-                    <div style={{ flex:1, display:'grid', gridTemplateColumns:'2fr 1fr 1.1fr 1.2fr 1fr 1fr', gap:6, alignItems:'center' }}>
+                    <div className="import-row-grid" style={{ flex:1, display:'grid', gridTemplateColumns:'2fr 1fr 1.1fr 1.2fr 1fr 1fr', gap:6, alignItems:'center', minWidth:0 }}>
                       <div>
                         <input value={item.desc} onChange={e=>updateItem(item.id,'desc',e.target.value)}
                           style={{ width:'100%', height:32, padding:'0 8px', border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:6, fontSize:12, fontFamily:'inherit', background:'white', outline:'none' }}/>
